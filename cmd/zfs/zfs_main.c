@@ -3200,10 +3200,28 @@ print_dataset(zfs_handle_t *zhp, list_cbdata_t *cb)
 	zprop_list_t *pl = cb->cb_proplist;
 	boolean_t first = B_TRUE;
 	char property[ZFS_MAXPROPLEN];
+	char zname[ZFS_MAXPROPLEN+4];
 	nvlist_t *userprops = zfs_get_user_props(zhp);
 	nvlist_t *propval;
 	char *propstr;
 	boolean_t right_justify;
+
+	(void) strlcpy(zname, zfs_get_name(zhp), sizeof(zname));
+	if (has_zle()) {
+		if (is_zle_parent(zname))
+			/*
+			 * append "..." to denote that its children have been suppressed
+			 * only downside is if you have
+			 **  zpool/backups
+			 * but do not have any children
+			 **  zpool/backups/...
+			 * therefore it will still have the "..." suffix due to
+			 * not prescanning the data set.
+			 */
+			(void) strlcat(zname, "...", sizeof(zname));
+		else if (is_zle_child(zname))
+			return;
+	}
 
 	for (; pl != NULL; pl = pl->pl_next) {
 		if (!first) {
@@ -3216,7 +3234,7 @@ print_dataset(zfs_handle_t *zhp, list_cbdata_t *cb)
 		}
 
 		if (pl->pl_prop == ZFS_PROP_NAME) {
-			(void) strlcpy(property, zfs_get_name(zhp),
+			(void) strlcpy(property, zname,
 			    sizeof (property));
 			propstr = property;
 			right_justify = zfs_prop_align_right(pl->pl_prop);
