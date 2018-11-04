@@ -751,6 +751,13 @@ extern int zfs_strcmp_pathname(char *name, char *cmp_name, int wholedisk);
 extern int zfs_path_order(char *path, int *order);
 
 /*
+ * ZLE support (ZFS_LIST_EXCLUDE)
+ */
+extern boolean_t has_zle(void);
+extern boolean_t is_zle_parent(char *zname);
+extern boolean_t is_zle_child(char *zname);
+
+/*
  * Mount support functions.
  */
 extern boolean_t is_mounted(libzfs_handle_t *, const char *special, char **);

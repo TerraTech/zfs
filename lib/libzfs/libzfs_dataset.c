@@ -4340,6 +4340,14 @@ zfs_expand_proplist(zfs_handle_t *zhp, zprop_list_t **plp, boolean_t received,
 		if (entry->pl_prop != ZPROP_INVAL) {
 			if (zfs_prop_get(zhp, entry->pl_prop,
 			    buf, sizeof (buf), NULL, NULL, 0, literal) == 0) {
+				/*
+				 * Skip any dataset names that are in the ZFS_LIST_EXCLUSION
+				 * environment variable so that pl_width is not perturbed.
+				 */
+				if (entry->pl_prop == ZFS_PROP_NAME && has_zle() &&
+				    (is_zle_child(buf) || is_zle_parent(buf)))
+							continue;
+
 				if (strlen(buf) > entry->pl_width)
 					entry->pl_width = strlen(buf);
 			}
