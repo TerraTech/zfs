@@ -117,6 +117,35 @@ typedef struct dedup_table {
 	boolean_t	ddt_full;
 } dedup_table_t;
 
+static boolean_t FQD_GUID = B_FALSE;
+
+_Pragma("GCC diagnostic push")
+_Pragma("GCC diagnostic ignored \"-Wunused-function\"")
+static void
+FQdebug(const char *format, ...) {
+	va_list arglist;
+	fprintf(stderr, "[FQdebug] ");
+	va_start(arglist, format);
+	vfprintf(stderr, format, arglist);
+	va_end(arglist);
+}
+_Pragma("GCC diagnostic pop")
+
+static boolean_t
+FQgtnd_override(void) {
+	static int override = -1;
+	char *env;
+
+	if (override == -1) {
+		override = 1;
+		env = getenv("FQ_OVERRIDE_GTND");
+		if (env == NULL || *env == '0')
+			override = 0;
+	}
+
+	return ((override) ? B_TRUE : B_FALSE);
+}
+
 static int
 high_order_bit(uint64_t n)
 {
@@ -2630,11 +2659,17 @@ guid_to_name_cb(zfs_handle_t *zhp, void *arg)
 	const char *slash;
 	int err;
 
+FQdebug("zhpName1:  %s\n", zhp->zfs_name);
+FQdebug("gtndSkip:  %s\n", gtnd->skip);
 	if (gtnd->skip != NULL &&
 	    (slash = strrchr(zhp->zfs_name, '/')) != NULL &&
 	    strcmp(slash + 1, gtnd->skip) == 0) {
-		zfs_close(zhp);
-		return (0);
+		if (FQgtnd_override() && strcmp(gtnd->skip, "containers") != 0)
+			FQdebug("gtndOverride: %s\n", gtnd->skip);
+		else {
+			zfs_close(zhp);
+			return (0);
+		}
 	}
 
 	if (zfs_prop_get_int(zhp, ZFS_PROP_GUID) == gtnd->guid) {
@@ -2643,7 +2678,9 @@ guid_to_name_cb(zfs_handle_t *zhp, void *arg)
 		return (EEXIST);
 	}
 
+FQdebug("zhpName2:  %s\n", zhp->zfs_name);
 	err = zfs_iter_children(zhp, guid_to_name_cb, gtnd);
+FQdebug("gGN: %19llu : %s\n", gtnd->guid, gtnd->name);
 	if (err != EEXIST && gtnd->bookmark_ok)
 		err = zfs_iter_bookmarks(zhp, guid_to_name_cb, gtnd);
 	zfs_close(zhp);
@@ -2676,6 +2713,10 @@ guid_to_name(libzfs_handle_t *hdl, const char *parent, uint64_t guid,
 	 * that there are multiple matching snapshots in the system.
 	 */
 	(void) strlcpy(pname, parent, sizeof (pname));
+if (FQD_GUID) {
+	FQdebug("parent: %s\n", parent);
+	FQdebug("pname:  %s\n", pname);
+}
 	char *cp = strrchr(pname, '@');
 	if (cp == NULL)
 		cp = strchr(pname, '\0');
@@ -2683,15 +2724,21 @@ guid_to_name(libzfs_handle_t *hdl, const char *parent, uint64_t guid,
 		/* Chop off the last component and open the parent */
 		*cp = '\0';
 		zfs_handle_t *zhp = make_dataset_handle(hdl, pname);
-
+FQdebug("got here: %d : %s\n", 1, pname);
 		if (zhp == NULL)
 			continue;
+FQdebug("got here: %d : %s\n", 2, pname);
 		int err = guid_to_name_cb(zfs_handle_dup(zhp), &gtnd);
-		if (err != EEXIST)
+		if (err != EEXIST) {
+FQdebug("got here: %d : %s\n", 3, pname);
 			err = zfs_iter_children(zhp, guid_to_name_cb, &gtnd);
-		if (err != EEXIST && bookmark_ok)
+		}
+		if (err != EEXIST && bookmark_ok) {
+FQdebug("got here: %d : %s\n", 4, pname);
 			err = zfs_iter_bookmarks(zhp, guid_to_name_cb, &gtnd);
+		}
 		zfs_close(zhp);
+FQdebug("got here: %d : %s\n", 5, pname);
 		if (err == EEXIST)
 			return (0);
 
@@ -2700,9 +2747,12 @@ guid_to_name(libzfs_handle_t *hdl, const char *parent, uint64_t guid,
 		 * time through (as we've already searched that portion of the
 		 * hierarchy).
 		 */
+FQdebug("gSkip:before: %s\n", gtnd.skip);
 		gtnd.skip = strrchr(pname, '/') + 1;
+FQdebug("gSkip:after: %s\n", (gtnd.skip != (char *)1) ? gtnd.skip : "-null-");
 	}
 
+FQdebug("got here: %d : %s\n", 6, pname);
 	return (ENOENT);
 }
 
@@ -3972,14 +4022,20 @@ zfs_receive_one(libzfs_handle_t *hdl, int infd, const char *tosnap,
 			(void) printf("using provided clone origin %s\n",
 			    origin);
 	} else if (drrb->drr_flags & DRR_FLAG_CLONE) {
+		FQdebug("destsnap: %s\n", destsnap);
+		FQdebug("guid:     %llu\n", drrb->drr_fromguid);
+FQD_GUID = B_TRUE;
 		if (guid_to_name(hdl, destsnap,
 		    drrb->drr_fromguid, B_FALSE, origin) != 0) {
+FQD_GUID = B_FALSE;
+
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 			    "local origin for clone %s does not exist"),
 			    destsnap);
 			err = zfs_error(hdl, EZFS_NOENT, errbuf);
 			goto out;
 		}
+FQD_GUID = B_FALSE;
 		if (flags->verbose)
 			(void) printf("found clone origin %s\n", origin);
 	}
